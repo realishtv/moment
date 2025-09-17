@@ -62,7 +62,7 @@ function App() {
   const handleOAuthLogin = () => {
     // The client now redirects to YOUR auth server, passing its own redirect URI
     // as the "return address".
-    const clientRedirectUri = window.location.origin;
+    const clientRedirectUri = window.location.origin + window.location.pathname;
     const authUrl = `${VITE_AUTH_SERVER_LOGIN_URL}?client_redirect_uri=${encodeURIComponent(clientRedirectUri)}`;
     window.location.href = authUrl;
   };
