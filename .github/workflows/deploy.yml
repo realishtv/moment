@@ -1,0 +1,69 @@
+# .github/workflows/deploy.yml
+
+# A descriptive name for your workflow
+name: Build and Deploy Moment Client to GitHub Pages
+
+# This workflow runs automatically ONLY when you push to the `client` branch.
+on:
+  push:
+    branches: ["client"]
+
+# These permissions are required for the official GitHub Pages deployment actions.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# This prevents multiple workflows from running at once for the same commit.
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  # The first job is to build your application.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Check out the CLIENT branch which contains the application source code.
+      # We don't need to specify the repository; it defaults to the current one.
+      - name: Checkout Client Code
+        uses: actions/checkout@v4
+        with:
+          ref: client # Ensures we are checking out the client branch
+
+      # Step 2: Set up the correct Node.js environment.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22 # Using a modern LTS version
+          cache: 'npm'
+
+      # Step 3: Install all project dependencies.
+      - name: Install Dependencies
+        run: npm ci # 'ci' is faster and more reliable for CI environments
+
+      # Step 4: Build the static site.
+      - name: Build Static Site
+        run: npm run build
+
+      # Step 5: Upload the build output as an artifact.
+      # This is the modern way to pass files from the build job to the deploy job.
+      - name: Upload Build Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Vite builds to a 'dist' folder by default.
+          path: ./dist
+
+  # The second job takes the artifact from the 'build' job and deploys it.
+  deploy:
+    # This job will only run after the 'build' job has succeeded.
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # This is the official action for deploying to GitHub Pages.
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
