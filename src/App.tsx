@@ -1,46 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { GITHUB_CLIENT_ID, GITHUB_SCOPES, GITHUB_REDIRECT_URI, VITE_GITHUB_TOKEN_EXCHANGE_URL } from './config';
+import { VITE_AUTH_SERVER_LOGIN_URL } from './config';
 import { Octokit } from 'octokit';
-
-// GitHub OAuth authorization URL
-const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [repositories, setRepositories] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-
-  const exchangeCodeForToken = useCallback(async (authCode: string, signal: AbortSignal): Promise<string | null> => {
-    try {
-      const response = await fetch(VITE_GITHUB_TOKEN_EXCHANGE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: authCode,
-          client_id: GITHUB_CLIENT_ID,
-          redirect_uri: GITHUB_REDIRECT_URI,
-        }),
-        signal,
-      });
-      const data = await response.json();
-      if (data.access_token) {
-        localStorage.setItem('github_access_token', data.access_token);
-        window.history.replaceState({}, document.title, window.location.pathname);
-        return data.access_token;
-      } else {
-        setError(data.error_description || 'Failed to get access token');
-        window.history.replaceState({}, document.title, window.location.pathname);
-        return null;
-      }
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        setError('Error exchanging code for token.');
-      }
-      window.history.replaceState({}, document.title, window.location.pathname);
-      return null;
-    }
-  }, []);
 
   const fetchRepositories = useCallback(async (token: string, signal: AbortSignal) => {
     try {
@@ -62,28 +28,28 @@ function App() {
     const { signal } = controller;
 
     const initAuth = async () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const code = urlParams.get('code');
+      // Step 1: Check for an access token in the URL hash (from the auth server redirect).
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const accessToken = hashParams.get('access_token');
       const storedToken = localStorage.getItem('github_access_token');
 
-      try {
-        if (code) {
-          const newToken = await exchangeCodeForToken(code, signal);
-          if (newToken && !signal.aborted) {
-            await fetchRepositories(newToken, signal);
-          }
-        } else if (storedToken) {
-          await fetchRepositories(storedToken, signal);
-        }
-      } catch (err: any) {
-         if (err.name !== 'AbortError') {
-           setError('An unexpected error occurred during authentication.');
-         }
-      } finally {
-        if (!signal.aborted) {
-          setIsLoading(false);
-        }
+      let tokenToUse: string | null = null;
+
+      if (accessToken) {
+        tokenToUse = accessToken;
+        localStorage.setItem('github_access_token', tokenToUse);
+        // Clean the URL for a better user experience.
+        window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+      } else if (storedToken) {
+        tokenToUse = storedToken;
       }
+
+      // Step 2: If we have a token (either from hash or storage), fetch data.
+      if (tokenToUse) {
+        await fetchRepositories(tokenToUse, signal);
+      }
+      
+      setIsLoading(false);
     };
     
     initAuth();
@@ -91,10 +57,13 @@ function App() {
     return () => {
       controller.abort();
     };
-  }, [exchangeCodeForToken, fetchRepositories]);
+  }, [fetchRepositories]);
 
   const handleOAuthLogin = () => {
-    const authUrl = `${GITHUB_AUTHORIZE_URL}?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${GITHUB_REDIRECT_URI}&scope=${GITHUB_SCOPES}`;
+    // The client now redirects to YOUR auth server, passing its own redirect URI
+    // as the "return address".
+    const clientRedirectUri = window.location.origin;
+    const authUrl = `${VITE_AUTH_SERVER_LOGIN_URL}?client_redirect_uri=${encodeURIComponent(clientRedirectUri)}`;
     window.location.href = authUrl;
   };
 
@@ -105,6 +74,7 @@ function App() {
     setError(null);
   };
 
+  // The rest of your JSX remains the same...
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center">
